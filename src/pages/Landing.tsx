@@ -134,7 +134,10 @@ export default function Landing() {
         </nav>
 
         {/* Right CTA */}
-        <div className="navbar-end gap-3">
+        <div className="navbar-end gap-2 sm:gap-3">
+          <Link to="/login" className="btn btn-ghost btn-sm text-sm font-medium lg:hidden">
+            Log in
+          </Link>
           <Link to="/login" className="btn btn-primary btn-sm text-sm font-semibold">
             Start Free →
           </Link>

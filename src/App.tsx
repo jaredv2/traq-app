@@ -8,6 +8,9 @@ import Login from "./pages/Login";
 import Onboarding from "./pages/Onboarding";
 import Home from "./pages/Home";
 import TrackerDetail from "./pages/Tracker";
+import CreateTracker from "./pages/CreateTracker";
+import Trackers from "./pages/Trackers";
+import Settings from "./pages/Settings";
 
 function App() {
   const initializeAuth = useAuthStore((state) => state.initialize);
@@ -28,7 +31,10 @@ function App() {
           <Route path="/onboarding" element={<Onboarding />} />
           <Route path="/home" element={<Home />} />
           <Route path="/tracker/:id" element={<TrackerDetail />} />
+          <Route path="/create" element={<CreateTracker />} />
           <Route path="/dashboard" element={<Navigate to="/home" replace />} />
+          <Route path="/tracker" element={<Trackers />} />
+          <Route path="/settings" element={<Settings />} />
         </Route>
       </Routes>
     </BrowserRouter>

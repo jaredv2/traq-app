@@ -11,20 +11,12 @@ import {
 } from "lucide-react";
 import { useAuth }    from "../hooks/useAuth";
 import { useHabits }  from "../hooks/useHabits";
-import { type Tracker } from "../lib/index";
+import { getFrequencyLabel, todayISO, type Tracker } from "../lib/index";
 import { useUiStore } from "../store/uiStore";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
-const isDoneToday = (h: Tracker) => !!h.calendar?.[todayISO()];
-
-const getFrequencyLabel = (cron: string) => {
-  if (cron === "0 0 * * *")   return "Daily";
-  if (cron === "0 0 * * 1-5") return "Weekdays";
-  if (cron === "0 0 * * 0,6") return "Weekends";
-  return "Custom";
-};
+const isDoneToday = (h: Tracker) => h.lastCheckIn === todayISO();
 
 const greeting = (): { label: string; Icon: typeof Sun } => {
   const h = new Date().getHours();
@@ -117,7 +109,7 @@ function SidebarContent({
               to={to}
               onClick={onNavClick}
               title={collapsed ? label : undefined}
-              className={`
+              className={`  
                 flex items-center gap-3 rounded-lg text-sm transition-all duration-150
                 ${collapsed ? "justify-center px-0 py-3" : "px-3 py-2.5"}
                 ${active
@@ -237,7 +229,7 @@ function MobileDrawer({ open, onClose }: { open: boolean; onClose: () => void })
 
 // ─── Habit row ────────────────────────────────────────────────────────────────
 
-function HabitRow({ habit, onToggle, index }: { habit: Tracker; onToggle: (id: string) => void; index: number }) {
+function HabitRow({ habit, index }: { habit: Tracker; onToggle: (id: string) => void; index: number }) {
   const navigate = useNavigate();
   const done = isDoneToday(habit);
 
@@ -251,7 +243,6 @@ function HabitRow({ habit, onToggle, index }: { habit: Tracker; onToggle: (id: s
         }
       `}
       style={{ animationDelay: `${0.18 + index * 0.06}s` }}
-      onClick={() => onToggle(habit.id)}
     >
       <div className="shrink-0">
         {done
@@ -260,7 +251,7 @@ function HabitRow({ habit, onToggle, index }: { habit: Tracker; onToggle: (id: s
         }
       </div>
 
-      <span className="text-lg shrink-0 select-none">{habit.emoji}</span>
+      <span className="text-lg shrink-0 select-none">{habit.icon}</span>
 
       <div className="flex-1 min-w-0">
         <p className={`text-sm font-medium truncate transition-colors ${done ? "text-base-content/30 line-through" : "text-base-content/80"}`}>
@@ -270,8 +261,8 @@ function HabitRow({ habit, onToggle, index }: { habit: Tracker; onToggle: (id: s
       </div>
 
       <div className="flex items-center gap-1 text-xs text-base-content/40 shrink-0">
-        <Flame size={12} className={habit.streak > 0 ? "text-orange-400" : "text-base-content/20"} />
-        <span>{habit.streak}d</span>
+        <Flame size={12} className={habit.currentStreak > 0 ? "text-orange-400" : "text-base-content/20"} />
+        <span>{habit.currentStreak}d</span>
       </div>
 
       {/* Navigate to /tracker/:id — stops row toggle */}
@@ -306,7 +297,7 @@ export default function Home() {
   const doneTodayCount = todayHabits.filter(isDoneToday).length;
   const totalToday     = todayHabits.length;
   const pct            = totalToday > 0 ? Math.round((doneTodayCount / totalToday) * 100) : 0;
-  const bestStreak     = habits.reduce((max, h) => Math.max(max, h.streak), 0);
+  const bestStreak     = habits.reduce((max, h) => Math.max(max, h.longestStreak), 0);
 
   return (
     <div

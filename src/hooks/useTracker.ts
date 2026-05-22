@@ -5,7 +5,7 @@ import { useTrackerStore } from "../store/trackerStore";
 export function useTracker(trackerId: string | undefined) {
   const { user } = useAuth();
   const tracker = useTrackerStore((state) => state.tracker);
-  const entries = useTrackerStore((state) => state.entries);
+  const checkIns = useTrackerStore((state) => state.checkIns);
   const loading = useTrackerStore((state) => state.loading);
   const error = useTrackerStore((state) => state.error);
   const reset = useTrackerStore((state) => state.reset);
@@ -27,7 +27,7 @@ export function useTracker(trackerId: string | undefined) {
 
   return {
     tracker,
-    entries,
+    checkIns,
     loading,
     error,
   };

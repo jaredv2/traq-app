@@ -1,30 +1,38 @@
 import { create } from "zustand";
-import { collection, doc, setDoc, Timestamp } from "firebase/firestore";
+import { collection, doc, increment, Timestamp, writeBatch } from "firebase/firestore";
 import { db } from "../lib/firebase";
-import { type Tracker, type User } from "../lib";
+import { TrackerModel, type TrackerFrequency, type User } from "../lib";
 
 export interface OnboardingData {
   name: string;
   focusAreas: string[];
   firstHabit: string;
-  frequency: string;
+  frequency: TrackerFrequency;
   reminderTime: string;
   reminderEnabled: boolean;
 }
 
 export const TOTAL_STEPS = 4;
 
+export const DEFAULT_FREQUENCY: TrackerFrequency = {
+  period: "day",
+  times: 1,
+  specificDays: [],
+  mode: "random",
+};
+
 const initialOnboardingData: OnboardingData = {
   name: "",
   focusAreas: [],
   firstHabit: "",
-  frequency: "0 0 * * *",
+  frequency: DEFAULT_FREQUENCY,
   reminderTime: "08:00",
   reminderEnabled: true,
 };
 
 interface CompleteOnboardingArgs {
   uid: string;
+  email: string;
   focusAreas: { id: string; icon: string; label: string }[];
 }
 
@@ -72,49 +80,40 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
     if (step === 3) return data.firstHabit.trim().length > 0;
     return true;
   },
-  complete: async ({ uid, focusAreas }) => {
+  complete: async ({ uid, email, focusAreas }) => {
     const { data } = get();
     set({ loading: true });
 
     try {
-      const focusLabels = focusAreas.map((area) => area.label);
-      const emoji = focusAreas[0]?.icon ?? "✨";
-
+      const trackerId = doc(collection(db, "trackers")).id;
       const userRef = doc(db, "users", uid);
+      const trackerRef = doc(db, "trackers", trackerId);
+      const batch = writeBatch(db);
+
       const userData: User = {
         uid,
         name: data.name,
-        hobbies: data.focusAreas,
-        habits: [data.firstHabit],
-        defaultFrequencySetup: data.frequency,
+        email,
+        isPremium: false,
+        trackerCount: 0,
         createdAt: Timestamp.now(),
-        plan: "free",
-        streak: 0,
       };
-      await setDoc(userRef, userData);
 
-      const trackerRef = doc(collection(db, "trackers"));
-      const trackerData: Tracker = {
-        id: trackerRef.id,
-        accId: uid,
+      const trackerData = TrackerModel.create({
+        id: trackerId,
+        ownerId: uid,
         name: data.firstHabit,
-        description: `My first habit focused on ${focusLabels.join(", ")}`,
+        icon: focusAreas[0]?.icon ?? "✨",
+        color: "#3b82f6",
+        unit: "check-ins",
         frequency: data.frequency,
-        emoji,
-        remindTime: data.reminderEnabled ? data.reminderTime : "",
-        acceptNote: true,
-        note: "",
-        streak: 0,
-        trackField: "Check-in",
-        calendar: {},
-        themeSetup: {
-          accentColor: "#3b82f6",
-          primaryColor: "#3b82f6",
-          font: "DM Sans",
-          backgroundImage: null,
-        },
-      };
-      await setDoc(trackerRef, trackerData);
+        createdAt: Timestamp.now(),
+        lastCheckIn: null,
+      });
+
+      batch.set(userRef, { ...userData, trackerCount: increment(1) }, { merge: true });
+      batch.set(trackerRef, trackerData.toFirestore());
+      await batch.commit();
 
       set({ loading: false });
     } catch (error) {

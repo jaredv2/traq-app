@@ -1,22 +1,37 @@
 import { create } from "zustand";
-import { collection, doc, getDocs, query, updateDoc, where } from "firebase/firestore";
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  query,
+  setDoc,
+  Timestamp,
+  updateDoc,
+  where,
+} from "firebase/firestore";
 import { db } from "../lib/firebase";
-import { type Tracker } from "../lib";
-
-const todayISO = (): string => new Date().toISOString().slice(0, 10);
+import {
+  calculateStreaks,
+  type Tracker,
+  type TrackerCheckIn,
+  todayISO,
+} from "../lib";
 
 interface HabitsState {
   habits: Tracker[];
+  checkInsByTracker: Record<string, Record<string, TrackerCheckIn>>;
   loading: boolean;
   error: string | null;
   currentUid?: string;
   reset: (uid?: string) => void;
   fetchHabits: (uid: string) => Promise<void>;
-  toggleHabit: (uid: string, id: string) => Promise<void>;
+  toggleHabit: (uid: string, id: string, note?: string) => Promise<void>;
 }
 
 const initialState = {
   habits: [] as Tracker[],
+  checkInsByTracker: {} as Record<string, Record<string, TrackerCheckIn>>,
   loading: false,
   error: null as string | null,
 };
@@ -40,69 +55,111 @@ export const useHabitsStore = create<HabitsState>((set, get) => ({
 
     try {
       const trackersCol = collection(db, "trackers");
-      const habitsQuery = query(trackersCol, where("accId", "==", uid));
+      const habitsQuery = query(trackersCol, where("ownerId", "==", uid));
       const snap = await getDocs(habitsQuery);
-      const habits = snap.docs.map(
-        (habitDoc) =>
-          ({
-            ...habitDoc.data(),
-            id: habitDoc.id,
-          }) as Tracker,
+
+      const checkInPairs = await Promise.all(
+        snap.docs.map(async (trackerDoc) => {
+          const checkInsSnap = await getDocs(collection(db, "trackers", trackerDoc.id, "checkIns"));
+          const checkIns = checkInsSnap.docs.reduce<Record<string, TrackerCheckIn>>((acc, checkInDoc) => {
+            acc[checkInDoc.id] = checkInDoc.data() as TrackerCheckIn;
+            return acc;
+          }, {});
+
+          return [trackerDoc.id, checkIns] as const;
+        }),
       );
 
+      const checkInsByTracker = Object.fromEntries(checkInPairs);
+      const habits = snap.docs.map((habitDoc) => {
+        const tracker = {
+          ...habitDoc.data(),
+          id: habitDoc.id,
+        } as Tracker;
+        const checkIns = checkInsByTracker[habitDoc.id] ?? {};
+        const streaks = calculateStreaks(checkIns);
+        return {
+          ...tracker,
+          ...streaks,
+        };
+      });
+
       if (get().currentUid !== uid) return;
-      set({ habits, loading: false, error: null });
+      set({ habits, checkInsByTracker, loading: false, error: null });
     } catch (error) {
       console.error("Error fetching habits:", error);
       if (get().currentUid !== uid) return;
       set({
-        error: "Couldn't load habits. Please check your connection.",
+        error: "Couldn't load trackers. Please check your connection.",
         loading: false,
       });
     }
   },
-  toggleHabit: async (uid, id) => {
-    const { habits, currentUid } = get();
+  toggleHabit: async (uid, id, note = "") => {
+    const { habits, checkInsByTracker, currentUid } = get();
     if (currentUid !== uid) return;
 
     const habit = habits.find((item) => item.id === id);
     if (!habit) return;
 
     const todayKey = todayISO();
-    const isDone = !!habit.calendar?.[todayKey];
-    const newCalendar = { ...(habit.calendar || {}) };
+    const trackerCheckIns = checkInsByTracker[id] ?? {};
+    const existingEntry = Object.entries(trackerCheckIns).find(([, checkIn]) => checkIn.date === todayKey);
+    const nextCheckIns = { ...trackerCheckIns };
 
-    if (isDone) {
-      delete newCalendar[todayKey];
+    if (existingEntry) {
+      delete nextCheckIns[existingEntry[0]];
     } else {
-      newCalendar[todayKey] = 1;
+      nextCheckIns[todayKey] = {
+        date: todayKey,
+        note,
+        timestamp: Timestamp.now(),
+      };
     }
 
-    const nextStreak = !isDone
-      ? (habit.streak || 0) + 1
-      : Math.max(0, (habit.streak || 0) - 1);
+    const streaks = calculateStreaks(nextCheckIns);
     const previousHabits = habits;
+    const previousCheckIns = checkInsByTracker;
     const nextHabits = habits.map((item) =>
       item.id === id
         ? {
             ...item,
-            calendar: newCalendar,
-            streak: nextStreak,
+            ...streaks,
           }
         : item,
     );
 
-    set({ habits: nextHabits });
+    set({
+      habits: nextHabits,
+      checkInsByTracker: {
+        ...checkInsByTracker,
+        [id]: nextCheckIns,
+      },
+    });
 
     try {
+      const checkInId = existingEntry?.[0] ?? todayKey;
+      const checkInRef = doc(db, "trackers", id, "checkIns", checkInId);
+
+      if (existingEntry) {
+        await deleteDoc(checkInRef);
+      } else {
+        await setDoc(checkInRef, {
+          date: todayKey,
+          note,
+          timestamp: Timestamp.now(),
+        });
+      }
+
       await updateDoc(doc(db, "trackers", id), {
-        calendar: newCalendar,
-        streak: nextStreak,
+        currentStreak: streaks.currentStreak,
+        longestStreak: streaks.longestStreak,
+        lastCheckIn: streaks.lastCheckIn,
       });
     } catch (error) {
-      console.error("Failed to update habit:", error);
+      console.error("Failed to update tracker:", error);
       if (get().currentUid !== uid) return;
-      set({ habits: previousHabits });
+      set({ habits: previousHabits, checkInsByTracker: previousCheckIns });
     }
   },
 }));
