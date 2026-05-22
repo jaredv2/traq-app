@@ -1,38 +1,37 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { AuthProvider } from "./context/AuthContext";
+import { useEffect } from "react";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import ProtectedRoute from "./auth/ProtectedRoute";
-
-// ─── Layouts ──────────────────────────────────────────────────────────────────
-import Layout from "./components/Layout";
-
-// ─── Public pages ─────────────────────────────────────────────────────────────
+import PublicOnlyRoute from "./auth/PublicOnlyRoute";
+import { useAuthStore } from "./store/authStore";
 import Landing from "./pages/Landing";
+import Login from "./pages/Login";
+import Onboarding from "./pages/Onboarding";
+import Home from "./pages/Home";
+import TrackerDetail from "./pages/Tracker";
 
 function App() {
+  const initializeAuth = useAuthStore((state) => state.initialize);
+
+  useEffect(() => {
+    initializeAuth();
+  }, [initializeAuth]);
+
   return (
-    // AuthProvider must wrap BrowserRouter so hooks work inside route components
-    <AuthProvider>
-      <BrowserRouter>
-        <Routes>
+    <BrowserRouter>
+      <Routes>
+        <Route element={<PublicOnlyRoute />}>
+          <Route path="/" element={<Landing />} />
+          <Route path="/login" element={<Login />} />
+        </Route>
 
-          {/* ── Public routes (shared layout) ─────────────────────────────── */}
-            <Route path="/"       element={<Landing />} />
-
-          {/* ── Protected routes ──────────────────────────────────────────── */}
-          {/* ProtectedRoute checks auth; redirects to /login if not signed in */}
-          <Route element={<ProtectedRoute />}>
-            <Route element={<Layout />}>
-            </Route>
-          </Route>
-
-          {/* ── Redirects ─────────────────────────────────────────────────── */}
+        <Route element={<ProtectedRoute />}>
+          <Route path="/onboarding" element={<Onboarding />} />
+          <Route path="/home" element={<Home />} />
+          <Route path="/tracker/:id" element={<TrackerDetail />} />
           <Route path="/dashboard" element={<Navigate to="/home" replace />} />
-
-          {/* ── 404 ───────────────────────────────────────────────────────── */}
-
-        </Routes>
-      </BrowserRouter>
-    </AuthProvider>
+        </Route>
+      </Routes>
+    </BrowserRouter>
   );
 }
 
